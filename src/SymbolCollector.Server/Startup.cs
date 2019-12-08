@@ -17,6 +17,8 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 using Newtonsoft.Json;
+using LibObjectFile;
+using LibObjectFile.Elf;
 
 namespace SymbolCollector.Server
 {
@@ -123,6 +125,28 @@ namespace SymbolCollector.Server
                     await section.Body.CopyToAsync(mem);
                     log.LogInformation("Size: " + mem.Length);
                     mem.Position = 0;
+                    try
+                    {
+                        var elf = ElfObjectFile.Read(mem);
+                        var diagnostics = elf.Verify();
+
+                        if (diagnostics.HasErrors)
+                        {
+                            foreach(var message in diagnostics.Messages)
+                            {
+                                // TODO: add as breadcrumb and send an event
+                                log.LogInformation(message.ToString());
+                            }
+                            log.LogError("File {file} had validation errors", debugId); // TODO: log name and debug id
+                            // TODO: Should be be storing them anyway?
+                            continue;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        log.LogError(ex, "Failed loading ELF file.");
+                        continue;
+                    }
                     await writer.WriteAsync(debugId, mem, CancellationToken.None);
                     store.TryAdd(debugId, 1);
                 }
